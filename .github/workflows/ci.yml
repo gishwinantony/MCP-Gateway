@@ -1,0 +1,72 @@
+name: ci
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        python-version: ["3.11", "3.12", "3.13"]
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: ${{ matrix.python-version }}
+          cache: pip
+      - run: pip install -e ".[dev]"
+      - run: ruff check src tests benchmarks examples
+      - run: pytest -q
+
+  scan:
+    # The gateway scanning its own sample config, as a supply-chain gate.
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+          cache: pip
+      - run: pip install -e .
+      - name: Fail if any configured MCP tool is quarantined
+        run: |
+          set +e
+          mcpgateway -c config/gateway.yaml --mode scan --log-level error > scan.json
+          code=$?
+          python -c "
+          import json
+          r = json.load(open('scan.json'))
+          print(json.dumps(r['summary'], indent=2))
+          for t in r['tools']:
+              if t['quarantined']:
+                  print(f\"QUARANTINED {t['name']} score={t['scan']['score']}\")
+                  for f in t['scan']['findings']:
+                      print(f\"  {f['severity']:8} {f['rule']} {f['message']}\")
+          "
+          # The shipped config intentionally includes a malicious sample server,
+          # so exit 1 is the expected result here. Remove this line in a real repo.
+          exit $(( code == 1 ? 0 : code ))
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: mcp-scan-report
+          path: scan.json
+
+  benchmark:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+          cache: pip
+      - run: pip install -e .
+      - run: python benchmarks/evaluate.py | tee benchmark.txt
+      - uses: actions/upload-artifact@v4
+        with:
+          name: benchmark
+          path: benchmark.txt

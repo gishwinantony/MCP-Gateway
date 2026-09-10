@@ -1,0 +1,39 @@
+# Principals are identified by a bearer token. Store the sha256 of the token,
+# never the token itself; `token:` is accepted for local development and is
+# hashed at load time.
+
+principals:
+  - id: agent-dev
+    token: "${DEV_TOKEN:-dev-token}"
+    allow:
+      - "files__*"
+      - "bulk__*"
+      - "evil__*"
+      - "gateway__*"
+    deny:
+      - "files__delete_file"
+      - "bulk__delete_*"
+    require_approval:
+      - "bulk__scale_deployment"
+    rate_limit:
+      calls_per_minute: 120
+      burst: 20
+    per_tool_rate_limit:
+      calls_per_minute: 30
+      burst: 5
+    argument_guards:
+      - tool: "files__read_file"
+        field: "path"
+        deny_regex: "(^|/)\\.env$|/\\.ssh/|/\\.aws/"
+      - tool: "files__write_file"
+        field: "content"
+        max_length: 100000
+    max_tools_exposed: 15
+
+  - id: ops-admin
+    token: "${ADMIN_TOKEN:-admin-token}"
+    allow: ["*"]
+    admin: true
+    rate_limit:
+      calls_per_minute: 600
+      burst: 60

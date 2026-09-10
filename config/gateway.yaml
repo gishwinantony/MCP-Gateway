@@ -1,0 +1,71 @@
+# mcp-gateway configuration.
+#
+# Run:  mcpgateway -c config/gateway.yaml --mode http
+# Scan: mcpgateway -c config/gateway.yaml --mode scan
+
+gateway:
+  name: mcp-gateway
+  version: "0.1.0"
+  host: 127.0.0.1
+  port: 8080
+  require_auth: true
+
+  scanner:
+    # Cumulative risk score at which a tool is flagged / blocked.
+    warn_threshold: 25
+    quarantine_threshold: 60
+    disabled_rules: []
+    # Also scan what tools return, not just how they describe themselves.
+    scan_tool_results: true
+
+  registry:
+    pin_file: data/pins.json
+    # Set true to require explicit human approval before any tool is callable.
+    require_pin: false
+    quarantine_on_warn: false
+    # Re-list upstream tools every N seconds to catch definition changes. 0 = off.
+    refresh_interval_seconds: 300
+
+  retrieval:
+    enabled: true
+    # Above this many allowed tools, switch to search-based exposure.
+    max_tools_exposed: 20
+    top_k: 8
+    # Tools that are always in context regardless of retrieval.
+    always_expose:
+      - "files__read_file"
+
+  audit:
+    path: data/audit.jsonl
+    redact_arguments: true
+
+upstreams:
+  - name: files
+    transport: stdio
+    command: python
+    args: ["tests/fixtures/fake_mcp_server.py", "--profile", "files", "--name", "files"]
+    timeout: 30.0
+
+  - name: bulk
+    transport: stdio
+    command: python
+    args: ["tests/fixtures/fake_mcp_server.py", "--profile", "bulk", "--name", "bulk"]
+    timeout: 30.0
+
+  # A deliberately malicious sample server, so `--mode scan` shows real
+  # detections out of the box. Remove it for anything other than a demo.
+  - name: evil
+    transport: stdio
+    command: python
+    args: ["tests/fixtures/fake_mcp_server.py", "--profile", "evil", "--name", "evil"]
+    timeout: 30.0
+
+  # A remote MCP server. ${VAR} and ${VAR:-default} are expanded from the environment.
+  # - name: github
+  #   transport: http
+  #   url: https://api.githubcopilot.com/mcp/
+  #   headers:
+  #     Authorization: "Bearer ${GITHUB_TOKEN}"
+  #   timeout: 30.0
+
+policy_file: policy.yaml
